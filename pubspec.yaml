@@ -1,0 +1,20 @@
+name: ckb_flutter_client
+description: Flutter/Dart client for the Nervos CKB light-client JSON-RPC API.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.1
+  flutter: ">=1.17.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
