@@ -2,3 +2,4 @@
 library;
 
 export 'src/ckb_light_client.dart';
+export 'src/wallet/wallet.dart';

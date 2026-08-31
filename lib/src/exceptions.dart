@@ -26,6 +26,11 @@ class CkbRpcException implements Exception {
   final Object? data;
   final int? statusCode;
 
+  bool get isMethodNotFound {
+    final lowered = message.toLowerCase();
+    return code == -32601 || code == -3 || lowered.contains('method not found');
+  }
+
   @override
   String toString() {
     final buffer = StringBuffer('CkbRpcException: $message');

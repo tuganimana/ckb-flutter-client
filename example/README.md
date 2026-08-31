@@ -1,17 +1,23 @@
-# example
+# CKB wallet example
 
-A new Flutter project.
+Example app for [`ckb_flutter_client`](../). It sets up a wallet, shows a CKB address to fund, and watches that lock on a public CKB RPC.
 
-## Getting Started
+## Run
 
-This project is a starting point for a Flutter application.
+```bash
+flutter pub get
+flutter run -d macos   # or chrome / ios / android
+```
 
-A few resources to get you started if this is your first Flutter project:
+RPCs (picked from the network toggle):
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- Testnet: `https://testnet.ckb.dev/rpc`
+- Mainnet: `https://mainnet.ckb.dev/rpc`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Flow
+
+1. Pick testnet or mainnet.
+2. **Mnemonic** — generate or import a 12-word BIP-39 phrase. The app derives `m/44'/309'/0'/0/0` and a secp256k1-blake160 address.
+3. **Passkey** — create a WebAuthn passkey on web, or a local secp256r1 key on other platforms, then encode a JoyID lock address.
+4. Fund the address (testnet faucet: https://faucet.nervos.org/).
+5. **Watch address** queries live cells on the public RPC.

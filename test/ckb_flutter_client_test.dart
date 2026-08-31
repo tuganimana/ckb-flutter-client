@@ -188,4 +188,26 @@ void main() {
     expect(status.data!.numberInt, 100);
     client.close();
   });
+
+  test('watchAddress ignores missing set_scripts on full nodes', () async {
+    const address =
+        'ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdnnw7qkdnnclfkg59uzn8umtfd2kwxceqxwquc4';
+    final client = _clientWith((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body['method'], 'set_scripts');
+      return http.Response(
+        jsonEncode({
+          'jsonrpc': '2.0',
+          'id': body['id'],
+          'error': {'code': -32601, 'message': 'Method not found'},
+        }),
+        200,
+      );
+    });
+
+    final decoded = await client.watchAddress(address);
+    expect(decoded.network, CkbNetwork.mainnet);
+    expect(decoded.script.args, '0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64');
+    client.close();
+  });
 }

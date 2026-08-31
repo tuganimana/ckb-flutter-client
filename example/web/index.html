@@ -18,7 +18,7 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="CKB wallet example using ckb_flutter_client.">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -29,8 +29,46 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>example</title>
+  <title>CKB Wallet</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    window.__ckbCreatePasskey = async function (rpId, userName, challengeB64, userIdB64) {
+      const decode = (value) => {
+        const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+        const pad = '='.repeat((4 - (normalized.length % 4)) % 4);
+        const binary = atob(normalized + pad);
+        return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      };
+      const encode = (buffer) => {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+        return btoa(binary);
+      };
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge: decode(challengeB64),
+          rp: { name: 'CKB Wallet', id: rpId || undefined },
+          user: {
+            id: decode(userIdB64),
+            name: userName,
+            displayName: userName,
+          },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+          authenticatorSelection: {
+            userVerification: 'preferred',
+            residentKey: 'preferred',
+          },
+          timeout: 120000,
+        },
+      });
+      const publicKey = credential.response.getPublicKey();
+      if (!publicKey) {
+        throw new Error('Passkey public key is unavailable');
+      }
+      return encode(publicKey);
+    };
+  </script>
 </head>
 <body>
   <!--

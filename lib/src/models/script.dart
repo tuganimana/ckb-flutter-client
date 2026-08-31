@@ -31,6 +31,35 @@ enum HashType {
         throw FormatException('Unknown hash_type: $value');
     }
   }
+
+  /// Wire byte used in CKB full addresses (RFC 0021).
+  int get byte {
+    switch (this) {
+      case HashType.data:
+        return 0;
+      case HashType.type:
+        return 1;
+      case HashType.data1:
+        return 2;
+      case HashType.data2:
+        return 4;
+    }
+  }
+
+  static HashType fromByte(int value) {
+    switch (value) {
+      case 0:
+        return HashType.data;
+      case 1:
+        return HashType.type;
+      case 2:
+        return HashType.data1;
+      case 4:
+        return HashType.data2;
+      default:
+        throw FormatException('Unknown hash_type byte: $value');
+    }
+  }
 }
 
 enum ScriptType {

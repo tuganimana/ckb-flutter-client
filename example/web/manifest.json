@@ -1,11 +1,11 @@
 {
-    "name": "example",
-    "short_name": "example",
+    "name": "CKB Wallet",
+    "short_name": "CKB Wallet",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#3CC68A",
+    "theme_color": "#3CC68A",
+    "description": "CKB wallet example using ckb_flutter_client.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -2,7 +2,7 @@
 
 Flutter/Dart client for a running [CKB light client](https://github.com/nervosnetwork/ckb-light-client) JSON-RPC endpoint.
 
-The package talks to `ckb-light-client` over HTTP. It does not embed the Rust binary — run a light client (default `http://127.0.0.1:9000`) and point this client at it.
+The package talks to a CKB JSON-RPC node over HTTP (public testnet/mainnet by default). It also derives wallets: BIP-39 mnemonics (secp256k1-blake160) and passkey / JoyID locks (secp256r1), then encodes fundable CKB addresses.
 
 ## Features
 
@@ -10,6 +10,8 @@ The package talks to `ckb-light-client` over HTTP. It does not embed the Rust bi
 - Header sync snapshot (`get_tip_header`, `get_header`, `fetch_header`)
 - Script filters (`set_scripts`, `get_scripts`)
 - Cell queries by lock (`get_cells`, `get_cells_capacity`)
+- Mnemonic wallets (`m/44'/309'/0'/0/0`) and CKB full addresses
+- Passkey / JoyID lock addresses from a P-256 public key
 - Transactions, peers, and `local_node_info`
 
 ## Install
@@ -33,23 +35,25 @@ flutter pub get
 ```dart
 import 'package:ckb_flutter_client/ckb_flutter_client.dart';
 
-final client = CkbLightClient(rpcUrl: 'http://127.0.0.1:9000');
+final wallet = CkbMnemonicWallet.generate(network: CkbNetwork.testnet);
+final account = wallet.deriveDefault();
+print(account.address); // fund this
 
-final sync = await client.getHeaderSyncStatus();
-print('tip #${sync.tip.numberInt} peers=${sync.peerCount}');
-
-final lock = CkbScript.secp256k1Blake160(
-  '0x64257f00b6b63e987609fa9be2d0c86d351020fb',
+final client = CkbLightClient(
+  rpcUrl: CkbLightClient.publicRpcUrlFor(CkbNetwork.testnet),
 );
-await client.setScripts(
-  [ScriptStatus.lock(lock)],
-  command: SetScriptsCommand.partial,
-);
-
-final cells = await client.getCellsByLock(lock);
-print('live cells: ${cells.objects.length}');
-
+await client.watchAddress(account.address);
+final capacity = await client.getCapacityByAddress(account.address);
+print('${capacity.capacityCkb} CKB');
 client.close();
+```
+
+Passkey / JoyID:
+
+```dart
+final keys = CkbPasskeyKeyPair.generate();
+final passkey = keys.account(network: CkbNetwork.testnet);
+print(passkey.address);
 ```
 
 ## Run the example app
@@ -60,13 +64,4 @@ flutter pub get
 flutter run -d macos   # or chrome / ios / android
 ```
 
-The example loads header sync from the RPC URL, then can register a lock script and list live cells.
-
-## Light client node
-
-Follow [Run a Light Client Node](https://docs.nervos.org/docs/node/run-light-client-node). Once it is up:
-
-```bash
-curl http://127.0.0.1:9000/ -X POST -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"get_tip_header","params":[],"id":1}'
-```
+The example creates a mnemonic or passkey wallet, shows the CKB address to fund, then watches that lock on the public testnet (`https://testnet.ckb.dev/rpc`) or mainnet (`https://mainnet.ckb.dev/rpc`) RPC.

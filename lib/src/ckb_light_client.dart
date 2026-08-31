@@ -1,17 +1,20 @@
 import 'package:http/http.dart' as http;
 
+import 'exceptions.dart';
 import 'hex.dart';
 import 'json_rpc_client.dart';
 import 'models/models.dart';
+import 'wallet/address.dart';
+import 'wallet/network.dart';
 
 export 'exceptions.dart';
 export 'hex.dart';
 export 'models/models.dart';
 
-/// Dart/Flutter client for a running [CKB light client](https://github.com/nervosnetwork/ckb-light-client) JSON-RPC endpoint.
+/// Dart/Flutter client for CKB JSON-RPC (light client or public full node).
 ///
-/// This package does not embed the light-client binary. Point [rpcUrl] at a
-/// local or remote `ckb-light-client` process (default `http://127.0.0.1:9000`).
+/// Defaults to the public testnet RPC. Use [publicRpcUrlFor] for mainnet, or
+/// `http://127.0.0.1:9000` for a local `ckb-light-client`.
 class CkbLightClient {
   CkbLightClient({
     this.rpcUrl = defaultRpcUrl,
@@ -26,8 +29,21 @@ class CkbLightClient {
     );
   }
 
-  /// Default light-client RPC listen address.
-  static const defaultRpcUrl = 'http://127.0.0.1:9000';
+  /// Public Nervos testnet full-node RPC (indexer included).
+  static const publicTestnetRpcUrl = 'https://testnet.ckb.dev/rpc';
+
+  /// Public Nervos mainnet full-node RPC (indexer included).
+  static const publicMainnetRpcUrl = 'https://mainnet.ckb.dev/rpc';
+
+  /// Public testnet RPC — the default so the client works without a local node.
+  static const defaultRpcUrl = publicTestnetRpcUrl;
+
+  /// Public node RPC for [network].
+  static String publicRpcUrlFor(CkbNetwork network) {
+    return network == CkbNetwork.mainnet
+        ? publicMainnetRpcUrl
+        : publicTestnetRpcUrl;
+  }
 
   final String rpcUrl;
   final http.Client _httpClient;
@@ -144,6 +160,43 @@ class CkbLightClient {
 
   Future<CellsCapacity> getCapacityByLock(CkbScript lock) {
     return getCellsCapacity(SearchKey.byLock(lock));
+  }
+
+  /// Decode [address], register its lock on a light client, and return it.
+  ///
+  /// Full nodes (for example `testnet.ckb.dev`) do not implement `set_scripts`.
+  /// In that case the lock is still returned so [getCapacityByAddress] can run.
+  Future<CkbAddress> watchAddress(
+    String address, {
+    SetScriptsCommand command = SetScriptsCommand.partial,
+  }) async {
+    final decoded = CkbAddress.decode(address);
+    try {
+      await setScripts([ScriptStatus.lock(decoded.script)], command: command);
+    } on CkbRpcException catch (error) {
+      if (!error.isMethodNotFound) rethrow;
+    }
+    return decoded;
+  }
+
+  Future<CellsCapacity> getCapacityByAddress(String address) {
+    return getCapacityByLock(CkbAddress.decode(address).script);
+  }
+
+  Future<Pagination<IndexedCell>> getCellsByAddress(
+    String address, {
+    Order order = Order.asc,
+    int limit = 50,
+    String? afterCursor,
+    bool withData = false,
+  }) {
+    return getCellsByLock(
+      CkbAddress.decode(address).script,
+      order: order,
+      limit: limit,
+      afterCursor: afterCursor,
+      withData: withData,
+    );
   }
 
   // --- Transactions --------------------------------------------------------
