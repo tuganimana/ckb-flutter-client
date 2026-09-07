@@ -5,7 +5,9 @@ import 'hex.dart';
 import 'json_rpc_client.dart';
 import 'models/models.dart';
 import 'wallet/address.dart';
+import 'wallet/hd_wallet.dart';
 import 'wallet/network.dart';
+import 'wallet/transfer.dart';
 
 export 'exceptions.dart';
 export 'hex.dart';
@@ -235,6 +237,45 @@ class CkbLightClient {
   Future<String> sendTransaction(Map<String, dynamic> tx) async {
     final result = await _rpc.call('send_transaction', [tx]);
     return result as String;
+  }
+
+  /// Collect live CKB cells, sign a secp256k1 transfer, and broadcast it.
+  Future<CkbSignedTransaction> transferCkb({
+    required CkbDerivedAccount from,
+    required String toAddress,
+    required int amountShannons,
+    int feeShannons = 0,
+    int cellLimit = 50,
+  }) async {
+    await watchAddress(from.address);
+    final page = await getCellsByLock(
+      from.lock,
+      limit: cellLimit,
+      withData: true,
+    );
+    final signed = CkbSecp256k1Transfer.build(
+      from: from,
+      toAddress: toAddress,
+      amountShannons: amountShannons,
+      cells: page.objects,
+      feeShannons: feeShannons,
+    );
+    final hash = await sendTransaction(signed.toJson());
+    return CkbSignedTransaction(raw: signed.raw, txHash: hash);
+  }
+
+  Future<Pagination<Map<String, dynamic>>> getTransactionsByAddress(
+    String address, {
+    Order order = Order.desc,
+    int limit = 20,
+    String? afterCursor,
+  }) {
+    return getTransactions(
+      searchKey: SearchKey.byLock(CkbAddress.decode(address).script),
+      order: order,
+      limit: limit,
+      afterCursor: afterCursor,
+    );
   }
 
   Future<Map<String, dynamic>> estimateCycles(Map<String, dynamic> tx) async {

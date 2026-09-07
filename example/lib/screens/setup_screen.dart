@@ -8,13 +8,15 @@ class SetupScreen extends StatelessWidget {
     super.key,
     required this.network,
     required this.onNetworkChanged,
-    required this.onChooseMnemonic,
+    required this.onGenerateMnemonic,
+    required this.onImportMnemonic,
     required this.onChoosePasskey,
   });
 
   final CkbNetwork network;
   final ValueChanged<CkbNetwork> onNetworkChanged;
-  final VoidCallback onChooseMnemonic;
+  final VoidCallback onGenerateMnemonic;
+  final VoidCallback onImportMnemonic;
   final VoidCallback onChoosePasskey;
 
   @override
@@ -49,11 +51,18 @@ class SetupScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           ChoiceCard(
-            icon: Icons.key,
-            title: 'Create with mnemonic',
+            icon: Icons.auto_awesome,
+            title: 'Generate mnemonic',
             subtitle:
-                'Generate or import a BIP-39 phrase and a secp256k1 CKB address.',
-            onTap: onChooseMnemonic,
+                'Create a new 12-word BIP-39 phrase and a secp256k1 CKB address.',
+            onTap: onGenerateMnemonic,
+          ),
+          const SizedBox(height: 12),
+          ChoiceCard(
+            icon: Icons.vpn_key_outlined,
+            title: 'Import mnemonic',
+            subtitle: 'Restore a wallet from an existing recovery phrase.',
+            onTap: onImportMnemonic,
           ),
           const SizedBox(height: 12),
           ChoiceCard(

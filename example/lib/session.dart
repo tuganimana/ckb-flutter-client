@@ -37,16 +37,48 @@ class WalletSession {
     return stored;
   }
 
-  WalletSession copyWith({String? rpcUrl}) {
+  CkbDerivedAccount? get derivedAccount {
+    if (kind != WalletKind.mnemonic || mnemonic == null) return null;
+    return CkbMnemonicWallet.fromMnemonic(
+      mnemonic!,
+      network: network,
+    ).deriveDefault();
+  }
+
+  WalletSession copyWith({
+    CkbNetwork? network,
+    String? address,
+    String? rpcUrl,
+  }) {
     return WalletSession(
       kind: kind,
-      network: network,
-      address: address,
+      network: network ?? this.network,
+      address: address ?? this.address,
       rpcUrl: rpcUrl ?? this.rpcUrl,
       mnemonic: mnemonic,
       passkeyPublicKey: passkeyPublicKey,
       platformPasskey: platformPasskey,
     );
+  }
+
+  WalletSession switchNetwork(CkbNetwork next) {
+    if (next == network) return this;
+    final rpc = CkbLightClient.publicRpcUrlFor(next);
+    if (kind == WalletKind.mnemonic && mnemonic != null) {
+      final account = CkbMnemonicWallet.fromMnemonic(
+        mnemonic!,
+        network: next,
+      ).deriveDefault();
+      return copyWith(network: next, address: account.address, rpcUrl: rpc);
+    }
+    if (kind == WalletKind.passkey && passkeyPublicKey != null) {
+      final account = CkbPasskeyAccount.fromPublicKey(
+        hexToBytes(passkeyPublicKey!),
+        network: next,
+      );
+      return copyWith(network: next, address: account.address, rpcUrl: rpc);
+    }
+    return copyWith(network: next, rpcUrl: rpc);
   }
 
   Map<String, String> toMap() => {

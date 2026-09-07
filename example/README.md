@@ -16,8 +16,9 @@ RPCs (picked from the network toggle):
 
 ## Flow
 
-1. Pick testnet or mainnet.
-2. **Mnemonic** — generate or import a 12-word BIP-39 phrase. The app derives `m/44'/309'/0'/0/0` and a secp256k1-blake160 address.
+1. Pick testnet or mainnet (you can switch later in the wallet).
+2. **Generate mnemonic** — create a new 12-word BIP-39 phrase (`CkbMnemonicWallet.generate`). **Import mnemonic** restores an existing phrase. Both derive `m/44'/309'/0'/0/0`.
 3. **Passkey** — create a WebAuthn passkey on web, or a local secp256r1 key on other platforms, then encode a JoyID lock address.
-4. Fund the address (testnet faucet: https://faucet.nervos.org/).
-5. **Watch address** queries live cells on the public RPC.
+4. **Receive** — share the address (testnet faucet: https://faucet.nervos.org/).
+5. **Send** — mnemonic wallets transfer CKB through `CkbLightClient.transferCkb`.
+6. **Cells** — track live cells for your wallet or any address.

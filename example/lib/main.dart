@@ -56,11 +56,14 @@ class _AppRootState extends State<_AppRoot> {
     });
   }
 
-  void _openMnemonic() {
+  void _openMnemonic({MnemonicSetupMode mode = MnemonicSetupMode.generate}) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) =>
-            MnemonicScreen(network: _network, onCreated: _onCreated),
+        builder: (context) => MnemonicScreen(
+          network: _network,
+          mode: mode,
+          onCreated: _onCreated,
+        ),
       ),
     );
   }
@@ -85,13 +88,13 @@ class _AppRootState extends State<_AppRoot> {
     setState(() => _session = null);
   }
 
-  Future<void> _updateRpc(String rpcUrl) async {
-    final session = _session;
-    if (session == null || session.rpcUrl == rpcUrl) return;
-    final updated = session.copyWith(rpcUrl: rpcUrl);
-    await updated.save();
+  Future<void> _updateSession(WalletSession session) async {
+    await session.save();
     if (!mounted) return;
-    setState(() => _session = updated);
+    setState(() {
+      _session = session;
+      _network = session.network;
+    });
   }
 
   @override
@@ -104,13 +107,15 @@ class _AppRootState extends State<_AppRoot> {
       return SetupScreen(
         network: _network,
         onNetworkChanged: (network) => setState(() => _network = network),
-        onChooseMnemonic: _openMnemonic,
+        onGenerateMnemonic: _openMnemonic,
+        onImportMnemonic: () => _openMnemonic(mode: MnemonicSetupMode.import),
         onChoosePasskey: _openPasskey,
       );
     }
     return WalletScreen(
       session: session,
-      onRpcUrlChanged: _updateRpc,
+      onSessionChanged: _updateSession,
+      onGenerateMnemonic: _openMnemonic,
       onReset: _reset,
     );
   }

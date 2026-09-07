@@ -22,6 +22,24 @@ String toHexUint(int value) {
   return '0x${value.toRadixString(16)}';
 }
 
+/// Encodes [value] as a CKB hex quantity.
+String toHexBigInt(BigInt value) {
+  if (value.isNegative) {
+    throw ArgumentError.value(value, 'value', 'must be non-negative');
+  }
+  return '0x${value.toRadixString(16)}';
+}
+
+/// CKB native token: 1 CKB = 10^8 shannons.
+const shannonsPerCkb = 100000000;
+
+/// Typical occupancy of a secp256k1-blake160 cell with empty data.
+const minCellCapacityShannons = 61 * shannonsPerCkb;
+
+int ckbToShannons(num ckb) => (ckb * shannonsPerCkb).round();
+
+double shannonsToCkb(int shannons) => shannons / shannonsPerCkb;
+
 String stripHexPrefix(String value) {
   final trimmed = value.trim();
   if (trimmed.startsWith('0x') || trimmed.startsWith('0X')) {

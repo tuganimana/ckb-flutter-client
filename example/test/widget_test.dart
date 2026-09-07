@@ -12,7 +12,8 @@ void main() {
     await tester.pumpWidget(const CkbWalletExampleApp());
     await tester.pumpAndSettle();
     expect(find.text('CKB Wallet'), findsOneWidget);
-    expect(find.text('Create with mnemonic'), findsOneWidget);
+    expect(find.text('Generate mnemonic'), findsOneWidget);
+    expect(find.text('Import mnemonic'), findsOneWidget);
     expect(find.text('Create with passkey'), findsOneWidget);
   });
 }

@@ -45,6 +45,12 @@ final client = CkbLightClient(
 await client.watchAddress(account.address);
 final capacity = await client.getCapacityByAddress(account.address);
 print('${capacity.capacityCkb} CKB');
+
+await client.transferCkb(
+  from: account,
+  toAddress: 'ckt1q...',
+  amountShannons: ckbToShannons(61),
+);
 client.close();
 ```
 
