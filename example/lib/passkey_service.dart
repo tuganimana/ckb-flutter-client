@@ -1,30 +1,24 @@
 import 'dart:typed_data';
 
-import 'package:ckb_flutter_client/ckb_flutter_client.dart';
-
 import 'passkey_impl_stub.dart'
     if (dart.library.js_interop) 'passkey_impl_web.dart'
     as impl;
+import 'passkey_types.dart';
 
-class PasskeyResult {
-  const PasskeyResult({required this.publicKey, required this.platformPasskey});
+export 'passkey_types.dart';
 
-  final Uint8List publicKey;
-  final bool platformPasskey;
-}
+/// Creates a device passkey (WebAuthn on web) used to wrap the wallet seed.
+Future<PasskeyEnrollment> enrollPasskey() => impl.createPasskey();
 
-/// Creates a passkey (WebAuthn on web, software secp256r1 elsewhere).
-Future<PasskeyResult> createPasskey() async {
-  final result = await impl.createPasskey();
-  return PasskeyResult(
-    publicKey: result.publicKey,
-    platformPasskey: result.platformPasskey,
-  );
-}
-
-CkbPasskeyAccount accountFromPasskey(
-  PasskeyResult result, {
-  CkbNetwork network = CkbNetwork.testnet,
+/// Asserts the enrolled passkey and returns the vault wrap key.
+Future<PasskeyAssertion> unlockWithPasskey({
+  required String credentialId,
+  required Uint8List prfSalt,
+  String? localWrapSecret,
 }) {
-  return CkbPasskeyAccount.fromPublicKey(result.publicKey, network: network);
+  return impl.authenticatePasskey(
+    credentialId: credentialId,
+    prfSalt: prfSalt,
+    localWrapSecret: localWrapSecret,
+  );
 }

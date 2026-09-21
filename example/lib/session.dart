@@ -1,28 +1,36 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:ckb_flutter_client/ckb_flutter_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum WalletKind { mnemonic, passkey }
+import 'passkey_service.dart';
+import 'vault_crypto.dart';
 
-class WalletSession {
-  const WalletSession({
-    required this.kind,
+class WalletVault {
+  const WalletVault({
     required this.network,
     required this.address,
     required this.rpcUrl,
-    this.mnemonic,
+    required this.credentialId,
+    required this.prfSalt,
+    required this.encryptedSecret,
     this.passkeyPublicKey,
     this.platformPasskey = false,
+    this.prfWrapped = false,
+    this.localWrapSecret,
   });
 
-  final WalletKind kind;
   final CkbNetwork network;
   final String address;
   final String rpcUrl;
-  final String? mnemonic;
+  final String credentialId;
+  final String prfSalt;
+  final String encryptedSecret;
   final String? passkeyPublicKey;
   final bool platformPasskey;
-
-  CkbScript get lock => CkbAddress.decode(address).script;
+  final bool prfWrapped;
+  final String? localWrapSecret;
 
   static bool isLoopbackRpc(String url) {
     final host = Uri.tryParse(url)?.host;
@@ -37,103 +45,191 @@ class WalletSession {
     return stored;
   }
 
-  CkbDerivedAccount? get derivedAccount {
-    if (kind != WalletKind.mnemonic || mnemonic == null) return null;
-    return CkbMnemonicWallet.fromMnemonic(
-      mnemonic!,
-      network: network,
-    ).deriveDefault();
-  }
-
-  WalletSession copyWith({
+  WalletVault copyWith({
     CkbNetwork? network,
     String? address,
     String? rpcUrl,
+    String? encryptedSecret,
   }) {
-    return WalletSession(
-      kind: kind,
+    return WalletVault(
       network: network ?? this.network,
       address: address ?? this.address,
       rpcUrl: rpcUrl ?? this.rpcUrl,
-      mnemonic: mnemonic,
+      credentialId: credentialId,
+      prfSalt: prfSalt,
+      encryptedSecret: encryptedSecret ?? this.encryptedSecret,
       passkeyPublicKey: passkeyPublicKey,
       platformPasskey: platformPasskey,
+      prfWrapped: prfWrapped,
+      localWrapSecret: localWrapSecret,
     );
   }
 
-  WalletSession switchNetwork(CkbNetwork next) {
+  WalletVault switchNetwork(CkbNetwork next, {required String mnemonic}) {
     if (next == network) return this;
-    final rpc = CkbLightClient.publicRpcUrlFor(next);
-    if (kind == WalletKind.mnemonic && mnemonic != null) {
-      final account = CkbMnemonicWallet.fromMnemonic(
-        mnemonic!,
-        network: next,
-      ).deriveDefault();
-      return copyWith(network: next, address: account.address, rpcUrl: rpc);
-    }
-    if (kind == WalletKind.passkey && passkeyPublicKey != null) {
-      final account = CkbPasskeyAccount.fromPublicKey(
-        hexToBytes(passkeyPublicKey!),
-        network: next,
-      );
-      return copyWith(network: next, address: account.address, rpcUrl: rpc);
-    }
-    return copyWith(network: next, rpcUrl: rpc);
+    final account = CkbMnemonicWallet.fromMnemonic(
+      mnemonic,
+      network: next,
+    ).deriveDefault();
+    return copyWith(
+      network: next,
+      address: account.address,
+      rpcUrl: CkbLightClient.publicRpcUrlFor(next),
+    );
   }
 
-  Map<String, String> toMap() => {
-    'kind': kind.name,
+  Map<String, dynamic> toJson() => {
     'network': network.name,
     'address': address,
     'rpcUrl': rpcUrl,
-    'mnemonic': ?mnemonic,
-    'passkeyPublicKey': ?passkeyPublicKey,
-    'platformPasskey': platformPasskey.toString(),
+    'credentialId': credentialId,
+    'prfSalt': prfSalt,
+    'encryptedSecret': encryptedSecret,
+    if (passkeyPublicKey != null) 'passkeyPublicKey': passkeyPublicKey,
+    'platformPasskey': platformPasskey,
+    'prfWrapped': prfWrapped,
+    if (localWrapSecret != null) 'localWrapSecret': localWrapSecret,
   };
 
-  static WalletSession fromMap(Map<String, String> map) {
-    final network = CkbNetwork.values.byName(map['network']!);
-    return WalletSession(
-      kind: WalletKind.values.byName(map['kind']!),
+  static WalletVault fromJson(Map<String, dynamic> json) {
+    final network = CkbNetwork.values.byName(json['network'] as String);
+    return WalletVault(
       network: network,
-      address: map['address']!,
-      rpcUrl: rpcUrlFor(network, stored: map['rpcUrl']),
-      mnemonic: map['mnemonic'],
-      passkeyPublicKey: map['passkeyPublicKey'],
-      platformPasskey: map['platformPasskey'] == 'true',
+      address: json['address'] as String,
+      rpcUrl: rpcUrlFor(network, stored: json['rpcUrl'] as String?),
+      credentialId: json['credentialId'] as String,
+      prfSalt: json['prfSalt'] as String,
+      encryptedSecret: json['encryptedSecret'] as String,
+      passkeyPublicKey: json['passkeyPublicKey'] as String?,
+      platformPasskey: json['platformPasskey'] == true,
+      prfWrapped: json['prfWrapped'] == true,
+      localWrapSecret: json['localWrapSecret'] as String?,
     );
   }
 
-  static const _key = 'ckb_wallet_session';
+  static const _key = 'ckb_wallet_vault_v1';
+  static const _legacyKey = 'ckb_wallet_session';
 
-  static Future<WalletSession?> load() async {
+  static Future<WalletVault?> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final values = prefs.getStringList(_key);
-    if (values == null || values.isEmpty) return null;
-    final map = <String, String>{};
-    for (final entry in values) {
-      final split = entry.indexOf('=');
-      if (split <= 0) continue;
-      map[entry.substring(0, split)] = entry.substring(split + 1);
+    await prefs.remove(_legacyKey);
+    final raw = prefs.getString(_key);
+    if (raw == null || raw.isEmpty) return null;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return null;
+    final map = Map<String, dynamic>.from(decoded);
+    if (map['address'] is! String || map['encryptedSecret'] is! String) {
+      return null;
     }
-    if (!map.containsKey('kind') || !map.containsKey('address')) return null;
-    final session = WalletSession.fromMap(map);
-    if (map['rpcUrl'] != session.rpcUrl) {
-      await session.save();
+    final vault = WalletVault.fromJson(map);
+    if (map['rpcUrl'] != vault.rpcUrl) {
+      await vault.save();
     }
-    return session;
+    return vault;
   }
 
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _key,
-      toMap().entries.map((e) => '${e.key}=${e.value}').toList(),
-    );
+    await prefs.setString(_key, jsonEncode(toJson()));
   }
 
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
+    await prefs.remove(_legacyKey);
+  }
+}
+
+/// In-memory unlocked wallet. The mnemonic only lives here after passkey auth.
+class WalletSession {
+  const WalletSession({required this.vault, required this.mnemonic});
+
+  final WalletVault vault;
+  final String mnemonic;
+
+  CkbNetwork get network => vault.network;
+  String get address => vault.address;
+  String get rpcUrl => vault.rpcUrl;
+  bool get platformPasskey => vault.platformPasskey;
+
+  CkbScript get lock => CkbAddress.decode(address).script;
+
+  CkbDerivedAccount get derivedAccount {
+    return CkbMnemonicWallet.fromMnemonic(
+      mnemonic,
+      network: network,
+    ).deriveDefault();
+  }
+
+  WalletSession withVault(WalletVault next) =>
+      WalletSession(vault: next, mnemonic: mnemonic);
+
+  static Future<WalletSession> authenticate(WalletVault vault) async {
+    final assertion = await unlockWithPasskey(
+      credentialId: vault.credentialId,
+      prfSalt: Uint8List.fromList(base64Decode(vault.prfSalt)),
+      localWrapSecret: vault.localWrapSecret,
+    );
+    return unlock(vault: vault, wrapKey: assertion.wrapKey);
+  }
+
+  static WalletSession unlock({
+    required WalletVault vault,
+    required List<int> wrapKey,
+  }) {
+    final packed = base64Decode(vault.encryptedSecret);
+    final plaintext = decryptSecret(Uint8List.fromList(wrapKey), packed);
+    final decoded = jsonDecode(plaintext);
+    if (decoded is! Map<String, dynamic> || decoded['mnemonic'] is! String) {
+      throw const FormatException('Vault is missing wallet keys');
+    }
+    final mnemonic = decoded['mnemonic'] as String;
+    CkbMnemonicWallet.fromMnemonic(mnemonic, network: vault.network);
+    return WalletSession(vault: vault, mnemonic: mnemonic);
+  }
+
+  static Future<WalletSession> enroll({
+    required CkbNetwork network,
+    required String mnemonic,
+    required PasskeyEnrollment passkey,
+  }) {
+    final account = CkbMnemonicWallet.fromMnemonic(
+      mnemonic,
+      network: network,
+    ).deriveDefault();
+    final vault = WalletVault(
+      network: network,
+      address: account.address,
+      rpcUrl: CkbLightClient.publicRpcUrlFor(network),
+      credentialId: passkey.credentialId,
+      prfSalt: base64Encode(passkey.prfSalt),
+      encryptedSecret: '',
+      passkeyPublicKey: passkey.publicKey == null
+          ? null
+          : bytesToHex(passkey.publicKey!),
+      platformPasskey: passkey.platformPasskey,
+      prfWrapped: passkey.prfWrapped,
+      localWrapSecret: passkey.prfWrapped ? null : passkey.localWrapSecret,
+    );
+    return seal(
+      vault: vault,
+      mnemonic: mnemonic,
+      wrapKey: passkey.wrapKey,
+    );
+  }
+
+  static Future<WalletSession> seal({
+    required WalletVault vault,
+    required String mnemonic,
+    required List<int> wrapKey,
+  }) async {
+    CkbMnemonicWallet.fromMnemonic(mnemonic, network: vault.network);
+    final packed = encryptSecret(
+      Uint8List.fromList(wrapKey),
+      jsonEncode({'mnemonic': mnemonic}),
+    );
+    final stored = vault.copyWith(encryptedSecret: base64Encode(packed));
+    await stored.save();
+    return WalletSession(vault: stored, mnemonic: mnemonic);
   }
 }

@@ -8,16 +8,14 @@ class SetupScreen extends StatelessWidget {
     super.key,
     required this.network,
     required this.onNetworkChanged,
-    required this.onGenerateMnemonic,
+    required this.onCreateWallet,
     required this.onImportMnemonic,
-    required this.onChoosePasskey,
   });
 
   final CkbNetwork network;
   final ValueChanged<CkbNetwork> onNetworkChanged;
-  final VoidCallback onGenerateMnemonic;
+  final VoidCallback onCreateWallet;
   final VoidCallback onImportMnemonic;
-  final VoidCallback onChoosePasskey;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +25,12 @@ class SetupScreen extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            'Set up a wallet, fund the address, then watch it with the light client.',
+            'Self-custodial wallet',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Keys stay on this device. A passkey is the only way to unlock them — the app does not hold a hosted account.',
             style: Theme.of(context).textTheme.bodyLarge,
           ),
           const SizedBox(height: 20),
@@ -51,26 +54,19 @@ class SetupScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           ChoiceCard(
-            icon: Icons.auto_awesome,
-            title: 'Generate mnemonic',
+            icon: Icons.fingerprint,
+            title: 'Create wallet',
             subtitle:
-                'Create a new 12-word BIP-39 phrase and a secp256k1 CKB address.',
-            onTap: onGenerateMnemonic,
+                'Generate keys on this device and protect them with a passkey.',
+            onTap: onCreateWallet,
           ),
           const SizedBox(height: 12),
           ChoiceCard(
             icon: Icons.vpn_key_outlined,
-            title: 'Import mnemonic',
-            subtitle: 'Restore a wallet from an existing recovery phrase.',
-            onTap: onImportMnemonic,
-          ),
-          const SizedBox(height: 12),
-          ChoiceCard(
-            icon: Icons.fingerprint,
-            title: 'Create with passkey',
+            title: 'Import recovery phrase',
             subtitle:
-                'Create a JoyID lock from a passkey (WebAuthn / secp256r1).',
-            onTap: onChoosePasskey,
+                'Restore keys from a BIP-39 phrase, then lock them with a passkey.',
+            onTap: onImportMnemonic,
           ),
         ],
       ),

@@ -12,6 +12,7 @@ dependencies:
   ckb_flutter_client:
     path: ../
   cupertino_icons: ^1.0.8
+  pointycastle: ^4.0.0
   shared_preferences: ^2.5.3
 
 dev_dependencies:

@@ -22,8 +22,8 @@ class PasskeyScreen extends StatefulWidget {
 class _PasskeyScreenState extends State<PasskeyScreen> {
   bool _busy = false;
   String? _error;
-  PasskeyResult? _passkey;
-  CkbPasskeyAccount? _account;
+  WalletSession? _session;
+  bool _showPhrase = false;
 
   Future<void> _create() async {
     setState(() {
@@ -31,12 +31,14 @@ class _PasskeyScreenState extends State<PasskeyScreen> {
       _error = null;
     });
     try {
-      final passkey = await createPasskey();
-      final account = accountFromPasskey(passkey, network: widget.network);
-      setState(() {
-        _passkey = passkey;
-        _account = account;
-      });
+      final passkey = await enrollPasskey();
+      final wallet = CkbMnemonicWallet.generate(network: widget.network);
+      final session = await WalletSession.enroll(
+        network: widget.network,
+        mnemonic: wallet.mnemonic,
+        passkey: passkey,
+      );
+      setState(() => _session = session);
     } catch (error) {
       setState(() => _error = error.toString());
     } finally {
@@ -44,42 +46,25 @@ class _PasskeyScreenState extends State<PasskeyScreen> {
     }
   }
 
-  Future<void> _continue() async {
-    final account = _account;
-    final passkey = _passkey;
-    if (account == null || passkey == null) return;
-    final session = WalletSession(
-      kind: WalletKind.passkey,
-      network: widget.network,
-      address: account.address,
-      rpcUrl: CkbLightClient.publicRpcUrlFor(widget.network),
-      passkeyPublicKey: account.publicKeyHex,
-      platformPasskey: passkey.platformPasskey,
-    );
-    await session.save();
-    widget.onCreated(session);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final account = _account;
+    final session = _session;
     return Scaffold(
-      appBar: AppBar(title: const Text('Passkey wallet')),
+      appBar: AppBar(title: const Text('Create wallet')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            'A passkey wallet uses secp256r1 (WebAuthn) and a JoyID lock. The resulting CKB address is what you fund.',
+            'Create a self-custodial CKB wallet. A passkey wraps the keys on this device. After that, passkey sign-in is required to unlock them.',
             style: Theme.of(context).textTheme.bodyLarge,
           ),
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _busy ? null : _create,
-            icon: const Icon(Icons.fingerprint),
-            label: Text(
-              account == null ? 'Create passkey' : 'Create another passkey',
+          if (session == null)
+            FilledButton.icon(
+              onPressed: _busy ? null : _create,
+              icon: const Icon(Icons.fingerprint),
+              label: const Text('Create passkey & wallet'),
             ),
-          ),
           if (_busy)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -92,28 +77,55 @@ class _PasskeyScreenState extends State<PasskeyScreen> {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
-          if (account != null && _passkey != null) ...[
+          if (session != null) ...[
             const SizedBox(height: 20),
             InfoCard(
-              title: 'Address to fund',
+              title: 'Wallet ready',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CopyableText(value: account.address),
+                  CopyableText(value: session.address, label: 'Address to fund'),
                   const SizedBox(height: 8),
                   Text(
-                    _passkey!.platformPasskey
-                        ? 'Stored as a platform passkey (WebAuthn).'
-                        : 'Platform passkeys are unavailable here, so a local secp256r1 key was used. The address is still a real JoyID lock.',
+                    session.platformPasskey
+                        ? 'Protected by a platform passkey. Sign in with that passkey the next time you open the app.'
+                        : 'Platform passkeys are unavailable here, so a local key wraps the vault. Use Unlock on the sign-in screen.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () => setState(() => _showPhrase = !_showPhrase),
+              icon: Icon(
+                _showPhrase ? Icons.visibility_off : Icons.visibility,
+              ),
+              label: Text(
+                _showPhrase ? 'Hide recovery phrase' : 'Show recovery phrase',
+              ),
+            ),
+            if (_showPhrase) ...[
+              const SizedBox(height: 12),
+              InfoCard(
+                title: 'Recovery phrase',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Write these words down. They restore the keys if this device or passkey is lost.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 12),
+                    CopyableText(value: session.mnemonic),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: _continue,
-              child: const Text('Use this wallet'),
+              onPressed: () => widget.onCreated(session),
+              child: const Text('Enter wallet'),
             ),
           ],
         ],

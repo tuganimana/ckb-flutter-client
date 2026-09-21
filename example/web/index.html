@@ -32,21 +32,34 @@
   <title>CKB Wallet</title>
   <link rel="manifest" href="manifest.json">
   <script>
-    window.__ckbCreatePasskey = async function (rpId, userName, challengeB64, userIdB64) {
+    (() => {
       const decode = (value) => {
+        if (!value) return new Uint8Array();
         const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
         const pad = '='.repeat((4 - (normalized.length % 4)) % 4);
         const binary = atob(normalized + pad);
         return Uint8Array.from(binary, (char) => char.charCodeAt(0));
       };
       const encode = (buffer) => {
+        if (!buffer) return '';
         const bytes = new Uint8Array(buffer);
         let binary = '';
         bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
         return btoa(binary);
       };
-      const credential = await navigator.credentials.create({
-        publicKey: {
+      const prfFrom = (credential) => {
+        const ext = credential.getClientExtensionResults?.() || {};
+        return encode(ext.prf?.results?.first);
+      };
+      const requirePasskeys = () => {
+        if (!window.PublicKeyCredential || !navigator.credentials) {
+          throw new Error('unsupported');
+        }
+      };
+
+      window.__ckbCreatePasskey = async function (rpId, userName, challengeB64, userIdB64, saltB64) {
+        requirePasskeys();
+        const publicKey = {
           challenge: decode(challengeB64),
           rp: { name: 'CKB Wallet', id: rpId || undefined },
           user: {
@@ -56,18 +69,48 @@
           },
           pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
           authenticatorSelection: {
-            userVerification: 'preferred',
+            userVerification: 'required',
             residentKey: 'preferred',
           },
           timeout: 120000,
-        },
-      });
-      const publicKey = credential.response.getPublicKey();
-      if (!publicKey) {
-        throw new Error('Passkey public key is unavailable');
-      }
-      return encode(publicKey);
-    };
+          extensions: saltB64 ? { prf: { eval: { first: decode(saltB64) } } } : {},
+        };
+        const credential = await navigator.credentials.create({ publicKey });
+        const spki = credential.response.getPublicKey?.();
+        if (!spki) {
+          throw new Error('Passkey public key is unavailable');
+        }
+        return JSON.stringify({
+          credentialId: encode(credential.rawId),
+          publicKey: encode(spki),
+          prf: prfFrom(credential),
+        });
+      };
+
+      window.__ckbGetPasskey = async function (rpId, challengeB64, credentialIdB64, saltB64) {
+        requirePasskeys();
+        const allowCredentials = credentialIdB64
+          ? [{ type: 'public-key', id: decode(credentialIdB64) }]
+          : [];
+        const credential = await navigator.credentials.get({
+          publicKey: {
+            challenge: decode(challengeB64),
+            rpId: rpId || undefined,
+            allowCredentials,
+            userVerification: 'required',
+            timeout: 120000,
+            extensions: saltB64 ? { prf: { eval: { first: decode(saltB64) } } } : {},
+          },
+        });
+        if (!credential) {
+          throw new Error('Passkey sign-in was cancelled');
+        }
+        return JSON.stringify({
+          credentialId: encode(credential.rawId),
+          prf: prfFrom(credential),
+        });
+      };
+    })();
   </script>
 </head>
 <body>

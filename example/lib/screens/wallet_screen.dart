@@ -9,14 +9,14 @@ class WalletScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.onSessionChanged,
-    required this.onGenerateMnemonic,
-    required this.onReset,
+    required this.onLock,
+    required this.onDeleteWallet,
   });
 
   final WalletSession session;
   final ValueChanged<WalletSession> onSessionChanged;
-  final VoidCallback onGenerateMnemonic;
-  final VoidCallback onReset;
+  final VoidCallback onLock;
+  final VoidCallback onDeleteWallet;
 
   @override
   State<WalletScreen> createState() => _WalletScreenState();
@@ -44,7 +44,7 @@ class _WalletScreenState extends State<WalletScreen>
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
     _rpcUrl = TextEditingController(
-      text: WalletSession.rpcUrlFor(session.network, stored: session.rpcUrl),
+      text: WalletVault.rpcUrlFor(session.network, stored: session.rpcUrl),
     );
     _sendTo = TextEditingController();
     _sendAmount = TextEditingController();
@@ -52,7 +52,9 @@ class _WalletScreenState extends State<WalletScreen>
     _trackedAddress = session.address;
     if (_rpcUrl.text != session.rpcUrl) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.onSessionChanged(session.copyWith(rpcUrl: _rpcUrl.text));
+        widget.onSessionChanged(
+          session.withVault(session.vault.copyWith(rpcUrl: _rpcUrl.text)),
+        );
       });
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -94,7 +96,9 @@ class _WalletScreenState extends State<WalletScreen>
     });
     final nextRpc = _rpcUrl.text.trim();
     if (nextRpc != session.rpcUrl) {
-      widget.onSessionChanged(session.copyWith(rpcUrl: nextRpc));
+      widget.onSessionChanged(
+        session.withVault(session.vault.copyWith(rpcUrl: nextRpc)),
+      );
     }
     final client = _client();
     try {
@@ -139,11 +143,6 @@ class _WalletScreenState extends State<WalletScreen>
   }
 
   Future<void> _send() {
-    final account = session.derivedAccount;
-    if (account == null) {
-      setState(() => _error = 'Sending requires a mnemonic wallet.');
-      return Future.value();
-    }
     final amount = double.tryParse(_sendAmount.text.trim());
     if (amount == null || amount <= 0) {
       setState(() => _error = 'Enter a CKB amount greater than 0.');
@@ -151,7 +150,7 @@ class _WalletScreenState extends State<WalletScreen>
     }
     return _run((client) async {
       final signed = await client.transferCkb(
-        from: account,
+        from: session.derivedAccount,
         toAddress: _sendTo.text.trim(),
         amountShannons: ckbToShannons(amount),
       );
@@ -205,14 +204,43 @@ class _WalletScreenState extends State<WalletScreen>
       );
       if (confirmed != true) return;
     }
-    widget.onSessionChanged(session.switchNetwork(network));
+    widget.onSessionChanged(
+      session.withVault(
+        session.vault.switchNetwork(network, mnemonic: session.mnemonic),
+      ),
+    );
+  }
+
+  Future<void> _showRecoveryPhrase() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Recovery phrase'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Anyone with these words can spend your CKB. They are only shown because you already unlocked with your passkey.',
+              ),
+              const SizedBox(height: 12),
+              CopyableText(value: session.mnemonic),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final kindLabel = session.kind == WalletKind.mnemonic
-        ? 'Mnemonic'
-        : 'Passkey';
     return Scaffold(
       appBar: AppBar(
         title: const Text('CKB Wallet'),
@@ -238,36 +266,27 @@ class _WalletScreenState extends State<WalletScreen>
               ),
             ),
           ),
-          IconButton(
-            tooltip: 'Generate mnemonic',
-            onPressed: widget.onGenerateMnemonic,
-            icon: const Icon(Icons.auto_awesome),
-          ),
-          IconButton(
-            tooltip: 'Reset wallet',
-            onPressed: () async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Reset wallet?'),
-                  content: const Text(
-                    'This removes the local wallet from this example app.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Reset'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirmed == true) widget.onReset();
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'phrase') {
+                _showRecoveryPhrase();
+              } else if (value == 'lock') {
+                widget.onLock();
+              } else if (value == 'delete') {
+                widget.onDeleteWallet();
+              }
             },
-            icon: const Icon(Icons.logout),
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'phrase',
+                child: Text('Show recovery phrase'),
+              ),
+              PopupMenuItem(value: 'lock', child: Text('Lock wallet')),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text('Delete from this device'),
+              ),
+            ],
           ),
         ],
         bottom: TabBar(
@@ -285,7 +304,12 @@ class _WalletScreenState extends State<WalletScreen>
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
             child: Row(
               children: [
-                Chip(label: Text(kindLabel)),
+                Chip(
+                  avatar: const Icon(Icons.fingerprint, size: 16),
+                  label: Text(
+                    session.platformPasskey ? 'Passkey' : 'Local key',
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -294,6 +318,11 @@ class _WalletScreenState extends State<WalletScreen>
                         : '${_capacity!.capacityCkb.toStringAsFixed(4)} CKB',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
+                ),
+                IconButton(
+                  tooltip: 'Lock',
+                  onPressed: widget.onLock,
+                  icon: const Icon(Icons.lock_outline),
                 ),
                 IconButton(
                   tooltip: 'Refresh',
@@ -318,13 +347,11 @@ class _WalletScreenState extends State<WalletScreen>
               children: [
                 _ReceiveTab(session: session),
                 _SendTab(
-                  session: session,
                   toController: _sendTo,
                   amountController: _sendAmount,
                   busy: _busy,
                   txHash: _txHash,
                   onSend: _send,
-                  onGenerateMnemonic: widget.onGenerateMnemonic,
                 ),
                 _CellsTab(
                   session: session,
@@ -366,6 +393,11 @@ class _ReceiveTab extends StatelessWidget {
                     : 'Share this address to receive mainnet CKB.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              const SizedBox(height: 8),
+              Text(
+                'Keys are unlocked in memory for this session only. Lock the wallet to require passkey sign-in again.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ),
         ),
@@ -376,26 +408,21 @@ class _ReceiveTab extends StatelessWidget {
 
 class _SendTab extends StatelessWidget {
   const _SendTab({
-    required this.session,
     required this.toController,
     required this.amountController,
     required this.busy,
     required this.txHash,
     required this.onSend,
-    required this.onGenerateMnemonic,
   });
 
-  final WalletSession session;
   final TextEditingController toController;
   final TextEditingController amountController;
   final bool busy;
   final String? txHash;
   final VoidCallback onSend;
-  final VoidCallback onGenerateMnemonic;
 
   @override
   Widget build(BuildContext context) {
-    final canSend = session.kind == WalletKind.mnemonic;
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -404,44 +431,31 @@ class _SendTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (!canSend) ...[
-                Text(
-                  'Passkey / JoyID locks cannot send from this example. Generate a mnemonic wallet to transfer CKB.',
-                  style: Theme.of(context).textTheme.bodyMedium,
+              TextField(
+                controller: toController,
+                decoration: const InputDecoration(
+                  labelText: 'Recipient address',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: onGenerateMnemonic,
-                  icon: const Icon(Icons.auto_awesome),
-                  label: const Text('Generate mnemonic'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
-              ] else ...[
-                TextField(
-                  controller: toController,
-                  decoration: const InputDecoration(
-                    labelText: 'Recipient address',
-                    border: OutlineInputBorder(),
-                  ),
+                decoration: const InputDecoration(
+                  labelText: 'Amount (CKB)',
+                  helperText: 'Minimum 61 CKB for a new cell',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: amountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Amount (CKB)',
-                    helperText: 'Minimum 61 CKB for a new cell',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: busy ? null : onSend,
-                  icon: const Icon(Icons.send),
-                  label: const Text('Send'),
-                ),
-              ],
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: busy ? null : onSend,
+                icon: const Icon(Icons.send),
+                label: const Text('Send'),
+              ),
               if (txHash != null) ...[
                 const SizedBox(height: 16),
                 CopyableText(value: txHash!, label: 'Transaction hash'),
